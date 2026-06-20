@@ -1,0 +1,24 @@
+# Python environments and cache
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# Project specific cache
+cache.sqlite
+
+# Ignore raw data and intermediate chunks to save space
+# Note: We are NOT ignoring data/output/ because the assignment requires the sample dataset
+data/raw/
+data/chunks/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
