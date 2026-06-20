@@ -7,17 +7,41 @@ This project was built to satisfy the Caliper Lab assignment requirements, utili
 ## 🚀 Pipeline Architecture
 
 ```mermaid
-graph TD
-    A[SEC EDGAR 10-K HTML] -->|download.py| B(Raw HTML)
-    B -->|parse.py| C{Strip Legal Boilerplate}
-    C -->|chunk.py| D[Chunking with Sliding Window Overlap]
-    D -->|generate.py| E[LLM Generator: Gemini 3.1 Flash-Lite]
-    E -->|SQLite Hash Cache| F(Generated QA Pairs)
-    F -->|verify.py| G{LLM Verifier: Strict Grading}
-    G -->|Pass| H[Verified QA Pairs]
-    G -->|Fail| I[Rejected QA Pairs]
-    I -->|main.py Reflection Loop| E
-    H -->|export.py| J[(Final CSV Dataset: 120 Pairs)]
+flowchart TD
+    subgraph Phase 1: Acquisition & Preprocessing
+        A[SEC EDGAR 10-K Filing URL] -->|download.py / User-Agent| B(Raw HTML File)
+        B -->|BeautifulSoup| C[Extract Clean Text]
+        C -->|Regex Rules| D[Strip Legal Boilerplate & Page Numbers]
+        D -->|Regex Matching| E[Semantic Chunking by SEC 'Items']
+        E -->|Length Check| F[Sliding Window Overlap: 200-word buffer]
+    end
+
+    subgraph Phase 2: Generation
+        F --> G[(SQLite Hash Cache)]
+        G -- Cache Miss --> H[LLM Generator\nGemini 3.1 Flash-Lite]
+        G -- Cache Hit --> I(Raw QA Pairs Array)
+        
+        H -->|Few-Shot Prompt + Diversity Forcing\nRound-Robin API Keys| I
+    end
+
+    subgraph Phase 3: Verification
+        I --> J[(SQLite Hash Cache)]
+        J -- Cache Miss --> K[LLM Verifier\nStrict Hallucination Check]
+        J -- Cache Hit --> L{Is Answer Supported?}
+        
+        K --> L
+    end
+
+    subgraph Phase 4: The Reflection Loop
+        L -- FAIL (Hallucination) --> M[Extract Specific Rejection Reason]
+        M -->|fix_rejected_qa| N[Reflection Prompt\n'Fix this specific mistake']
+        N --> H
+    end
+
+    subgraph Output
+        L -- PASS (Verified) --> O[Aggregate Clean QA Pairs]
+        O -->|export.py| P[(Final Structured CSV Dataset)]
+    end
 ```
 
 ## 🧠 Ideation & Thought Process
@@ -57,6 +81,13 @@ This pipeline evolved significantly through trial and error. What started as a b
 We chose the recent **NVIDIA 2024 10-K Filing** due to its rich business overview, risk factors, and highly scrutinized segment performance data. 
 
 To ensure we comfortably hit the required **100+ threshold**, we intentionally over-generated 125 questions. The strict verifier initially rejected 33, but the **Reflection Loop** salvaged 28 of them by instructing the LLM to learn from its specific mistakes, yielding a final dataset of exactly **120 pristine, doubly-verified QA pairs**.
+
+## ⚠️ Known Limitations
+
+While this pipeline is highly robust, it has a few constraints based on its current architecture:
+1. **Tabular Data Loss:** `BeautifulSoup` strips HTML tables into flat text. Financial tables (like balance sheets) lose their row/column semantic structure. Consequently, the LLM struggles to generate complex numeric calculation questions that require cross-referencing multiple rows in a table.
+2. **Context Window Boundaries:** Although the 200-word sliding window mitigates severed context, a highly complex topic spanning across 5 pages may still be fragmented across chunks, limiting the LLM's ability to generate deep, multi-chunk reasoning questions.
+3. **Regex Fragility:** The document parsing relies on Regex to find standard SEC "Item X." headers. While this works flawlessly for standard 10-K filings (like NVIDIA's), highly irregular or custom-formatted filings from smaller companies might fall back to the naive token-based chunking method.
 
 ## 🌍 Scaling to 1000+ Pairs and Multiple Documents
 
